@@ -21,9 +21,6 @@ import org.hid4java.jna.HidDeviceInfoStructure
 import java.util.function.Consumer
 import kotlin.experimental.and
 
-private const val HID_TRACKER_RECEIVER_VID = 0x1209
-private const val HID_TRACKER_RECEIVER_PID = 0x7690
-
 /**
  * Receives trackers data by UDP using extended owoTrack protocol.
  */
@@ -35,6 +32,11 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
 	private val devicesByHID: MutableMap<HidDevice, MutableList<Int>> = HashMap()
 	private val hidServicesSpecification = HidServicesSpecification()
 	private val hidServices: HidServices
+
+	private val supportedDevices: Set<Pair<Int, Int>> = setOf(
+		// SlimeNRF Receiver
+		Pair(0x1209, 0x7690),
+	)
 
 	init {
 		hidServicesSpecification.setAutoStart(false)
@@ -53,7 +55,7 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
 	}
 
 	private fun checkConfigureDevice(hidDevice: HidDevice) {
-		if (hidDevice.vendorId == HID_TRACKER_RECEIVER_VID && hidDevice.productId == HID_TRACKER_RECEIVER_PID) { // TODO: Use correct ids
+		if (supportedDevices.contains(Pair(hidDevice.vendorId, hidDevice.productId))) {
 			if (hidDevice.isClosed) {
 				check(hidDevice.open()) { "Unable to open device" }
 			}
@@ -268,7 +270,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
 	private fun deviceEnumerate() {
 		var root: HidDeviceInfoStructure? = null
 		try {
-			root = HidApi.enumerateDevices(HID_TRACKER_RECEIVER_VID, HID_TRACKER_RECEIVER_PID) // TODO: change to proper vendorId and productId, need to enum all appropriate productId
+			// TODO: change to proper vendorId and productId, need to enum all appropriate productId
+			// enumerate first device that has supported vid/pid
+			for ((vid,pid) in supportedDevices) {
+				root = HidApi.enumerateDevices(vid, pid)
+
+				if (root != null) {
+					break
+				}
+			}
 		} catch (e: Throwable) {
 			LogManager.severe("[TrackerServer] Couldn't enumerate HID devices", e)
 		}
