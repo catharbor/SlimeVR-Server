@@ -43,6 +43,11 @@ public class RPCSerialHandler implements SerialListener {
 				RpcMessage.SerialTrackerGetWifiScanRequest,
 				this::onSerialTrackerGetWifiScanRequest
 			);
+		rpcHandler
+			.registerPacketListener(
+				RpcMessage.SerialTrackerCommandRequest,
+				this::onSerialCommandRequest
+			);
 		rpcHandler.registerPacketListener(RpcMessage.SetWifiRequest, this::onSetWifiRequest);
 		rpcHandler.registerPacketListener(RpcMessage.OpenSerialRequest, this::onOpenSerialRequest);
 		rpcHandler
@@ -173,6 +178,15 @@ public class RPCSerialHandler implements SerialListener {
 			return;
 
 		this.api.server.serialHandler.wifiScanRequest();
+	}
+
+	public void onSerialCommandRequest(GenericConnection conn, RpcMessageHeader messageHeader) {
+		SerialTrackerCommandRequest req = (SerialTrackerCommandRequest) messageHeader
+			.message(new SerialTrackerCommandRequest());
+		if (req == null)
+			return;
+
+		this.api.server.serialHandler.commandRequest(req.command());
 	}
 
 	private void onRequestSerialDevices(GenericConnection conn, RpcMessageHeader messageHeader) {
