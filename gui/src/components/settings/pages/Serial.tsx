@@ -21,9 +21,6 @@ import { Typography } from '@/components/commons/Typography';
 import { Localized, useLocalization } from '@fluent/react';
 import { BaseModal } from '@/components/commons/BaseModal';
 import { WarningBox } from '@/components/commons/TipBox';
-import { useBreakpoint } from '@/hooks/breakpoint';
-import { Input } from '@/components/commons/Input';
-import { SerialTrackerCommandRequestT } from 'solarxr-protocol/protocol/typescript/dist/solarxr-protocol/rpc/serial-tracker-command-request';
 import { useIsTauri } from '@/hooks/breakpoint';
 import { fileSave } from 'browser-fs-access';
 import { save } from '@tauri-apps/plugin-dialog';
@@ -33,10 +30,6 @@ import { waitUntil } from '@/utils/a11y';
 
 export interface SerialForm {
   port: string;
-}
-
-interface SerialInputForm {
-  command: string;
 }
 
 export function Serial() {
@@ -77,26 +70,6 @@ export function Serial() {
     req.auto = port === 'Auto';
     req.port = port;
     sendRPCPacket(RpcMessage.OpenSerialRequest, req);
-  };
-
-  const {
-    reset: resetInput,
-    control: controlInput,
-    handleSubmit: handleSubmitInput,
-    formState,
-  } = useForm<SerialInputForm>({
-    defaultValues: { command: '' },
-  });
-
-  const onSubmitInput = (value: SerialInputForm) => {
-    const command = value.command.trim();
-    if (command === '') {
-      return;
-    }
-
-    sendCommand(command);
-
-    resetInput();
   };
 
   useEffect(() => {
@@ -186,12 +159,6 @@ export function Serial() {
     sendRPCPacket(
       RpcMessage.SerialTrackerGetWifiScanRequest,
       new SerialTrackerGetWifiScanRequestT()
-    );
-  };
-  const sendCommand = (command: string) => {
-    sendRPCPacket(
-      RpcMessage.SerialTrackerCommandRequest,
-      new SerialTrackerCommandRequestT(command)
     );
   };
 
