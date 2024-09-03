@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useLocation } from 'react-router-dom';
 import {
@@ -14,7 +14,6 @@ import {
   SerialUpdateResponseT,
   SerialTrackerGetWifiScanRequestT,
 } from 'solarxr-protocol';
-import { useElemSize, useLayout } from '@/hooks/layout';
 import { useWebsocketAPI } from '@/hooks/websocket-api';
 import { Button } from '@/components/commons/Button';
 import { Dropdown } from '@/components/commons/Dropdown';
@@ -25,6 +24,12 @@ import { WarningBox } from '@/components/commons/TipBox';
 import { useBreakpoint } from '@/hooks/breakpoint';
 import { Input } from '@/components/commons/Input';
 import { SerialTrackerCommandRequestT } from 'solarxr-protocol/protocol/typescript/dist/solarxr-protocol/rpc/serial-tracker-command-request';
+import { useIsTauri } from '@/hooks/breakpoint';
+import { fileSave } from 'browser-fs-access';
+import { save } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { error } from '@/utils/logging';
+import { waitUntil } from '@/utils/a11y';
 
 export interface SerialForm {
   port: string;
@@ -35,20 +40,11 @@ interface SerialInputForm {
 }
 
 export function Serial() {
-  const {
-    layoutHeight,
-    layoutWidth,
-    ref: consoleRef,
-  } = useLayout<HTMLDivElement>();
-  const { isMobile } = useBreakpoint('mobile');
   const { l10n } = useLocalization();
   const { state } = useLocation();
 
-  const toolbarRef = useRef<HTMLDivElement>(null);
-  const { height } = useElemSize(toolbarRef);
-
   const { useRPCPacket, sendRPCPacket } = useWebsocketAPI();
-  // const consoleRef = useRef<HTMLPreElement>(null);
+  const consoleRef = useRef<HTMLDivElement>(null);
   const [consoleContent, setConsole] = useState('');
 
   const [isSerialOpen, setSerialOpen] = useState(false);
@@ -126,7 +122,7 @@ export function Serial() {
         setSerialOpen(true);
       }
 
-      if (data.log && consoleRef.current) {
+      if (data.log) {
         setConsole((console) => console + data.log);
       }
     }
@@ -199,6 +195,50 @@ export function Serial() {
     );
   };
 
+  const isTauri = useIsTauri();
+  const consoleContentRef = useRef(consoleContent);
+  useLayoutEffect(() => {
+    consoleContentRef.current = consoleContent;
+  }, [consoleContent]);
+
+  const saveLogToFile = async () => {
+    // Check if we have getInfos and fetch them if we don't
+    if (!consoleContentRef.current.includes('GET INFO')) {
+      getInfos();
+      await waitUntil(
+        () => consoleContentRef.current.includes('GET INFO'),
+        100,
+        10
+      );
+    }
+
+    if (isTauri) {
+      save({
+        filters: [
+          {
+            name: l10n.getString('settings-serial-file_type'),
+            extensions: ['txt'],
+          },
+        ],
+        defaultPath: 'serial-logs.txt',
+      })
+        .then((path) =>
+          path ? writeTextFile(path, consoleContentRef.current) : undefined
+        )
+        .catch((err) => {
+          error(err);
+        });
+    } else {
+      const blob = new Blob([consoleContentRef.current], {
+        type: 'text/plain',
+      });
+      fileSave(blob, {
+        fileName: 'serial-logs.txt',
+        extensions: ['.txt'],
+      });
+    }
+  };
+
   return (
     <>
       <BaseModal
@@ -223,61 +263,28 @@ export function Serial() {
           </Button>
         </div>
       </BaseModal>
-      <div className="flex flex-col bg-background-70 h-full p-5 rounded-md">
-        <div className="flex flex-row mobile:flex-col pb-2 justify-between">
-          <div className="flex flex-col">
-            <Typography variant="main-title">
-              {l10n.getString('settings-serial')}
-            </Typography>
-            <>
-              {l10n
-                .getString('settings-serial-description')
-                .split('\n')
-                .map((line, i) => (
-                  <Typography color="secondary" key={i}>
-                    {line}
-                  </Typography>
-                ))}
-            </>
-          </div>
-          <div className="flex flex-wrap gap-2 mobile:grid mobile:grid-cols-2 mobile:grid-rows-2 items-end justify-end">
-            <Button variant="tertiary" onClick={reboot}>
-              {l10n.getString('settings-serial-reboot')}
-            </Button>
-            <Button variant="tertiary" onClick={() => setTryFactoryReset(true)}>
-              {l10n.getString('settings-serial-factory_reset')}
-            </Button>
-            <Button variant="tertiary" onClick={getInfos}>
-              {l10n.getString('settings-serial-get_infos')}
-            </Button>
-            <Button variant="tertiary" onClick={getWifiScan}>
-              {l10n.getString('settings-serial-get_wifi_scan')}
-            </Button>
-            {isMobile && (
-              <Dropdown
-                control={control}
-                name="port"
-                display="block"
-                placeholder={l10n.getString('settings-serial-serial_select')}
-                items={serialDevices.map((device) => ({
-                  label: device.name?.toString() || 'error',
-                  value: device.port?.toString() || 'error',
-                }))}
-              ></Dropdown>
-            )}
-          </div>
+      <div className="flex flex-col bg-background-70 h-full p-4 mobile:p-2 rounded-md">
+        <div className="flex flex-col pb-2 mobile:pt-4">
+          <Typography variant="main-title">
+            {l10n.getString('settings-serial')}
+          </Typography>
+          <>
+            {l10n
+              .getString('settings-serial-description')
+              .split('\n')
+              .map((line, i) => (
+                <Typography color="secondary" key={i}>
+                  {line}
+                </Typography>
+              ))}
+          </>
         </div>
-
-        <div className="bg-background-80 rounded-lg flex flex-col p-2">
+        <div className="bg-background-80 rounded-lg flex-grow h-0 flex flex-col p-2">
           <div
+            className="flex-grow overflow-x-auto overflow-y-auto"
             ref={consoleRef}
-            className="overflow-x-auto overflow-y-auto"
-            style={{
-              height: layoutHeight - height - 30 - (isMobile ? 88 : 0),
-              width: layoutWidth - 24,
-            }}
           >
-            <div className="flex select-text px-3">
+            <div className="flex select-text">
               <pre>
                 {isSerialOpen
                   ? consoleContent
@@ -285,49 +292,42 @@ export function Serial() {
               </pre>
             </div>
           </div>
-          <div className="" ref={toolbarRef}>
-            <div className="border-t-2 pt-2  border-background-60 border-solid m-2 gap-2 flex flex-row">
-              <form
-                className="w-full flex flex-row gap-2"
-                onSubmit={handleSubmitInput(onSubmitInput)}
+          <div className="border-t-2 pt-2 border-background-60 border-solid gap-2 flex flex-row">
+            <div className="xs:flex flex-grow xs:flex-wrap gap-2 grid grid-cols-2">
+              <Button variant="quaternary" onClick={reboot}>
+                {l10n.getString('settings-serial-reboot')}
+              </Button>
+              <Button
+                variant="quaternary"
+                onClick={() => setTryFactoryReset(true)}
               >
-                <div className="flex-grow h-full">
-                  <Input
-                    name="command"
-                    type="text"
-                    control={controlInput}
-                    placeholder={l10n.getString(
-                      'settings-serial-serial_command_input'
-                    )}
-                  />
-                </div>
-                {isMobile && (
-                  <Button
-                    variant="primary"
-                    type="submit"
-                    disabled={formState.isSubmitting}
-                  >
-                    {l10n.getString('settings-serial-serial_command_submit')}
-                  </Button>
-                )}
-              </form>
-
-              {!isMobile && (
-                <div className="text-nowrap">
-                  <Dropdown
-                    control={control}
-                    name="port"
-                    display="fit"
-                    placeholder={l10n.getString(
-                      'settings-serial-serial_select'
-                    )}
-                    items={serialDevices.map((device) => ({
-                      label: device.name?.toString() || 'error',
-                      value: device.port?.toString() || 'error',
-                    }))}
-                  ></Dropdown>
-                </div>
-              )}
+                {l10n.getString('settings-serial-factory_reset')}
+              </Button>
+              <Button variant="quaternary" onClick={getInfos}>
+                {l10n.getString('settings-serial-get_infos')}
+              </Button>
+              <Button variant="quaternary" onClick={getWifiScan}>
+                {l10n.getString('settings-serial-get_wifi_scan')}
+              </Button>
+              <Button
+                variant="quaternary"
+                onClick={saveLogToFile}
+                disabled={!isSerialOpen || !consoleContent.trim()}
+              >
+                {l10n.getString('settings-serial-save_logs')}
+              </Button>
+              <div className="w-full mobile:col-span-2">
+                <Dropdown
+                  control={control}
+                  name="port"
+                  display="block"
+                  placeholder={l10n.getString('settings-serial-serial_select')}
+                  items={serialDevices.map((device) => ({
+                    label: device.name?.toString() || 'error',
+                    value: device.port?.toString() || 'error',
+                  }))}
+                ></Dropdown>
+              </div>
             </div>
           </div>
         </div>
